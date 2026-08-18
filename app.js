@@ -174,6 +174,33 @@ function dictionarySuggestions() {
   return ["駅", "電車", "食べる", "ホテル", "ありがとう"].map((word) => `<button type="button" class="suggestion-button" data-dictionary-word="${word}">${word}</button>`).join("");
 }
 
+const romajiKanaMap = {
+  kya: "きゃ", kyu: "きゅ", kyo: "きょ", sha: "しゃ", shu: "しゅ", sho: "しょ", cha: "ちゃ", chu: "ちゅ", cho: "ちょ", nya: "にゃ", nyu: "にゅ", nyo: "にょ", hya: "ひゃ", hyu: "ひゅ", hyo: "ひょ", mya: "みゃ", myu: "みゅ", myo: "みょ", rya: "りゃ", ryu: "りゅ", ryo: "りょ", gya: "ぎゃ", gyu: "ぎゅ", gyo: "ぎょ", ja: "じゃ", ju: "じゅ", jo: "じょ", bya: "びゃ", byu: "びゅ", byo: "びょ", pya: "ぴゃ", pyu: "ぴゅ", pyo: "ぴょ", fa: "ふぁ", fi: "ふぃ", fe: "ふぇ", fo: "ふぉ", va: "ゔぁ", vi: "ゔぃ", ve: "ゔぇ", vo: "ゔぉ", she: "しぇ", je: "じぇ", che: "ちぇ", wi: "うぃ", we: "うぇ", wo: "を", tsu: "つ", shi: "し", chi: "ち", fu: "ふ", ji: "じ", di: "ぢ", du: "づ", ka: "か", ki: "き", ku: "く", ke: "け", ko: "こ", ga: "が", gi: "ぎ", gu: "ぐ", ge: "げ", go: "ご", sa: "さ", su: "す", se: "せ", so: "そ", za: "ざ", zi: "じ", zu: "ず", ze: "ぜ", zo: "ぞ", ta: "た", ti: "ち", tu: "つ", te: "て", to: "と", da: "だ", de: "で", do: "ど", na: "な", ni: "に", nu: "ぬ", ne: "ね", no: "の", ha: "は", hi: "ひ", hu: "ふ", he: "へ", ho: "ほ", ba: "ば", bi: "び", bu: "ぶ", be: "べ", bo: "ぼ", pa: "ぱ", pi: "ぴ", pu: "ぷ", pe: "ぺ", po: "ぽ", ma: "ま", mi: "み", mu: "む", me: "め", mo: "も", ya: "や", yu: "ゆ", yo: "よ", ra: "ら", ri: "り", ru: "る", re: "れ", ro: "ろ", wa: "わ", n: "ん", a: "あ", i: "い", u: "う", e: "え", o: "お" };
+const romajiKanaKeys = Object.keys(romajiKanaMap).sort((a, b) => b.length - a.length);
+
+function romanToHiragana(value = "") {
+  let text = value.toLowerCase().replace(/[ā]/g, "aa").replace(/[ī]/g, "ii").replace(/[ū]/g, "uu").replace(/[ē]/g, "ee").replace(/[ō]/g, "ou").replace(/[^a-z]/g, "");
+  let result = "";
+  while (text) {
+    if (text.length > 1 && text[0] === text[1] && !"aeiou n".includes(text[0])) { result += "っ"; text = text.slice(1); continue; }
+    if (text.startsWith("nn")) { result += "ん"; text = text.slice(2); continue; }
+    const key = romajiKanaKeys.find((candidate) => text.startsWith(candidate));
+    if (!key) { text = text.slice(1); continue; }
+    result += romajiKanaMap[key]; text = text.slice(key.length);
+  }
+  return result;
+}
+
+function hiraganaToKatakana(value = "") {
+  return Array.from(value).map((char) => { const code = char.charCodeAt(0); return code >= 0x3041 && code <= 0x3096 ? String.fromCharCode(code + 0x60) : char; }).join("");
+}
+
+function katakanaToHiragana(value = "") {
+  return Array.from(value).map((char) => { const code = char.charCodeAt(0); return code >= 0x30a1 && code <= 0x30f6 ? String.fromCharCode(code - 0x60) : char; }).join("");
+}
+
+function isKana(value = "") { return /^[ぁ-ゖァ-ヺー]+$/.test(value); }
+
 async function translateOnline(text, source = "en", target = "zh-CN") {
   const cacheKey = `${source}|${target}|${text}`;
   if (dictionaryCache.has(cacheKey)) return dictionaryCache.get(cacheKey);
@@ -203,8 +230,14 @@ async function lookupOnlineDictionary(query) {
     let meanings = definitions;
     try { meanings = await Promise.all(definitions.map((definition) => translateOnline(definition))); } catch { /* Keep English definitions if translation is unavailable. */ }
     const romanization = entry.forms?.find((form) => form.tags?.includes("romanization"))?.word || "";
+    const exactForm = entry.forms?.find((form) => form.word === query)?.word;
+    const canonicalForm = entry.forms?.find((form) => form.tags?.includes("canonical") && /[\u3040-\u30ff\u3400-\u9fff]/.test(form.word) && !form.word.includes(" "))?.word;
+    const word = exactForm || canonicalForm || payload.word || query;
+    const kanaForm = entry.forms?.find((form) => isKana(form.word) && (form.tags?.includes("terminative") || form.tags?.includes("canonical")))?.word || entry.forms?.find((form) => isKana(form.word))?.word || romanToHiragana(romanization);
+    const hiragana = isKana(kanaForm) ? katakanaToHiragana(kanaForm) : romanToHiragana(kanaForm);
+    const katakana = hiraganaToKatakana(hiragana);
     const ipa = entry.pronunciations?.find((pronunciation) => pronunciation.text)?.text || "";
-    return { word: entry.forms?.find((form) => form.tags?.includes("canonical"))?.word || payload.word || query, romanization, ipa, part: entry.partOfSpeech || "词条", meanings, source: payload.source?.url || "" };
+    return { word, hiragana, katakana, romanization, ipa, part: entry.partOfSpeech || "词条", meanings, source: payload.source?.url || "" };
   }));
   return { query, lookupTerm, entries };
 }
@@ -214,7 +247,7 @@ function renderOnlineDictionaryResults(result) {
   $("#dictionary-suggestions").innerHTML = dictionarySuggestions();
   $("#dictionary-result-meta").textContent = result.entries.length ? `联网找到 ${result.entries.length} 个词条${result.lookupTerm !== normalized ? ` · 按“${result.lookupTerm}”查询` : ""}` : `联网词库没有找到“${normalized}”`;
   $("#dictionary-results").innerHTML = result.entries.length ? result.entries.map((entry) => `<article class="dictionary-card">
-    <div class="dictionary-main"><h3>${renderJapaneseText(entry.word)}</h3><span class="dictionary-reading">${escapeHtml(entry.romanization || entry.ipa || "暂无读音")}</span></div>
+    <div class="dictionary-main"><h3>${renderJapaneseText(entry.word)}</h3><span class="dictionary-reading">${entry.hiragana ? `平假名 ${escapeHtml(entry.hiragana)} · 片假名 ${escapeHtml(entry.katakana)}` : "暂无假名"}<br>${escapeHtml(entry.romanization || entry.ipa || "暂无罗马音")}</span></div>
     <div class="dictionary-meaning-wrap"><div class="dictionary-meaning">${entry.meanings.map((meaning) => escapeHtml(meaning)).join("；")} <span class="dictionary-reading">· ${escapeHtml(entry.part)}</span></div><div class="dictionary-example">在线释义 · 数据来自公开日语词典</div></div>
     <button type="button" class="dictionary-audio" data-speak="${encodeURIComponent(entry.word)}" title="朗读词语" aria-label="朗读 ${entry.word}">◖</button>
   </article>`).join("") : `<div class="dictionary-empty">联网词库没有找到这个词。可以换成日语、假名或罗马音再试。</div>`;
