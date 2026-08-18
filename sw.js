@@ -1,4 +1,4 @@
-const CACHE_NAME = "nihongo-life-v3";
+const CACHE_NAME = "nihongo-life-v4";
 const APP_SHELL = [
   "./",
   "./index.html",

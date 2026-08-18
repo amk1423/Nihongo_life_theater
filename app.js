@@ -101,21 +101,6 @@ const wordMeanings = {
   "しました": "已经做了／完成了"
 };
 
-const dictionaryEntries = [
-  { word: "駅", reading: "えき", roman: "eki", meaning: "车站", part: "名词", example: "駅はどこですか？", exampleZh: "车站在哪里？" },
-  { word: "電車", reading: "でんしゃ", roman: "densha", meaning: "电车；火车", part: "名词", example: "電車に乗ります。", exampleZh: "乘坐电车。" },
-  { word: "切符", reading: "きっぷ", roman: "kippu", meaning: "车票", part: "名词", example: "切符を一枚お願いします。", exampleZh: "请给我一张车票。" },
-  { word: "片道", reading: "かたみち", roman: "katamichi", meaning: "单程", part: "名词", example: "片道でお願いします。", exampleZh: "请给我单程票。" },
-  { word: "往復", reading: "おうふく", roman: "oufuku", meaning: "往返", part: "名词", example: "往復ですか？", exampleZh: "是往返吗？" },
-  { word: "お願いします", reading: "おねがいします", roman: "onegaishimasu", meaning: "拜托了；请……", part: "表达", example: "東京までお願いします。", exampleZh: "请给我一张到东京的票。" },
-  { word: "すみません", reading: "すみません", roman: "sumimasen", meaning: "不好意思；对不起", part: "表达", example: "すみません、渋谷駅はどこですか？", exampleZh: "不好意思，涩谷站在哪里？" },
-  { word: "どのくらい", reading: "どのくらい", roman: "dono kurai", meaning: "多久；多少", part: "疑问词", example: "どのくらいかかりますか？", exampleZh: "大概要花多长时间？" },
-  { word: "大丈夫", reading: "だいじょうぶ", roman: "daijoubu", meaning: "没问题；可以", part: "形容动词", example: "ここで大丈夫です。", exampleZh: "在这里停就可以了。" },
-  { word: "助かりました", reading: "たすかりました", roman: "tasukarimashita", meaning: "帮大忙了", part: "表达", example: "助かりました、ありがとうございます。", exampleZh: "帮大忙了，谢谢。" },
-  { word: "乗る", reading: "のる", roman: "noru", meaning: "乘坐；搭乘", part: "动词", example: "この電車に乗ってください。", exampleZh: "请乘坐这班电车。" },
-  { word: "ここ", reading: "ここ", roman: "koko", meaning: "这里", part: "指示词", example: "ここで大丈夫です。", exampleZh: "在这里就可以了。" }
-];
-
 const defaultProgress = { streak: 1, completed: 0, reviewItems: [], lastScene: "ticket" };
 const state = {
   progress: loadProgress(),
@@ -179,25 +164,91 @@ function renderReviewList() {
   bindWordTokens($("#review-list"));
 }
 
-function renderDictionary(query = "") {
-  const normalized = query.trim().toLowerCase();
-  const results = normalized ? dictionaryEntries.filter((entry) => [entry.word, entry.reading, entry.roman, entry.meaning, entry.example, entry.exampleZh].some((value) => value.toLowerCase().includes(normalized))) : dictionaryEntries;
-  $("#dictionary-suggestions").innerHTML = ["駅", "電車", "すみません", "お願いします", "大丈夫"].map((word) => `<button type="button" class="suggestion-button" data-dictionary-word="${word}">${word}</button>`).join("");
-  $("#dictionary-result-meta").textContent = normalized ? `找到 ${results.length} 个结果` : `离线词库 · ${results.length} 个常用词条`;
-  $("#dictionary-results").innerHTML = results.length ? results.map((entry) => `<article class="dictionary-card">
-    <div class="dictionary-main"><h3>${renderJapaneseText(entry.word)}</h3><span class="dictionary-reading">${entry.reading} · ${entry.roman}</span></div>
-    <div class="dictionary-meaning-wrap"><div class="dictionary-meaning">${entry.meaning} <span class="dictionary-reading">· ${entry.part}</span></div><div class="dictionary-example">例：${renderJapaneseText(entry.example)} <span>｜${entry.exampleZh}</span></div></div>
+const dictionaryCache = new Map();
+let dictionaryRequestId = 0;
+let dictionarySearchTimer = null;
+const onlineDictionaryApi = "https://freedictionaryapi.com/api/v1/entries/ja/";
+const onlineTranslateApi = "https://api.mymemory.translated.net/get";
+
+function dictionarySuggestions() {
+  return ["駅", "電車", "食べる", "ホテル", "ありがとう"].map((word) => `<button type="button" class="suggestion-button" data-dictionary-word="${word}">${word}</button>`).join("");
+}
+
+async function translateOnline(text, source = "en", target = "zh-CN") {
+  const cacheKey = `${source}|${target}|${text}`;
+  if (dictionaryCache.has(cacheKey)) return dictionaryCache.get(cacheKey);
+  const url = `${onlineTranslateApi}?q=${encodeURIComponent(text)}&langpair=${source}|${target}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`translation-${response.status}`);
+  const payload = await response.json();
+  const translated = payload?.responseData?.translatedText?.trim() || text;
+  dictionaryCache.set(cacheKey, translated);
+  return translated;
+}
+
+async function lookupOnlineDictionary(query) {
+  let lookupTerm = query;
+  let response = await fetch(`${onlineDictionaryApi}${encodeURIComponent(query)}`);
+  if (!response.ok) throw new Error(`dictionary-${response.status}`);
+  let payload = await response.json();
+  if (!payload.entries?.length && /[\u3400-\u9fff]/.test(query)) {
+    lookupTerm = await translateOnline(query, "zh-CN", "ja");
+    response = await fetch(`${onlineDictionaryApi}${encodeURIComponent(lookupTerm)}`);
+    if (!response.ok) throw new Error(`dictionary-${response.status}`);
+    payload = await response.json();
+  }
+  if (!payload.entries?.length) return { query, lookupTerm, entries: [] };
+  const entries = await Promise.all(payload.entries.slice(0, 4).map(async (entry) => {
+    const definitions = entry.senses?.flatMap((sense) => [sense.definition, ...(sense.subsenses || []).map((subsense) => subsense.definition)]).filter(Boolean).slice(0, 3) || [];
+    let meanings = definitions;
+    try { meanings = await Promise.all(definitions.map((definition) => translateOnline(definition))); } catch { /* Keep English definitions if translation is unavailable. */ }
+    const romanization = entry.forms?.find((form) => form.tags?.includes("romanization"))?.word || "";
+    const ipa = entry.pronunciations?.find((pronunciation) => pronunciation.text)?.text || "";
+    return { word: entry.forms?.find((form) => form.tags?.includes("canonical"))?.word || payload.word || query, romanization, ipa, part: entry.partOfSpeech || "词条", meanings, source: payload.source?.url || "" };
+  }));
+  return { query, lookupTerm, entries };
+}
+
+function renderOnlineDictionaryResults(result) {
+  const normalized = result.query.trim();
+  $("#dictionary-suggestions").innerHTML = dictionarySuggestions();
+  $("#dictionary-result-meta").textContent = result.entries.length ? `联网找到 ${result.entries.length} 个词条${result.lookupTerm !== normalized ? ` · 按“${result.lookupTerm}”查询` : ""}` : `联网词库没有找到“${normalized}”`;
+  $("#dictionary-results").innerHTML = result.entries.length ? result.entries.map((entry) => `<article class="dictionary-card">
+    <div class="dictionary-main"><h3>${renderJapaneseText(entry.word)}</h3><span class="dictionary-reading">${escapeHtml(entry.romanization || entry.ipa || "暂无读音")}</span></div>
+    <div class="dictionary-meaning-wrap"><div class="dictionary-meaning">${entry.meanings.map((meaning) => escapeHtml(meaning)).join("；")} <span class="dictionary-reading">· ${escapeHtml(entry.part)}</span></div><div class="dictionary-example">在线释义 · 数据来自公开日语词典</div></div>
     <button type="button" class="dictionary-audio" data-speak="${encodeURIComponent(entry.word)}" title="朗读词语" aria-label="朗读 ${entry.word}">◖</button>
-  </article>`).join("") : `<div class="dictionary-empty">还没有找到这个词。可以试试输入日语、中文或罗马音。</div>`;
+  </article>`).join("") : `<div class="dictionary-empty">联网词库没有找到这个词。可以换成日语、假名或罗马音再试。</div>`;
   $$("#dictionary-results [data-speak]").forEach((button) => button.addEventListener("click", () => speak(decodeURIComponent(button.dataset.speak))));
   $$("#dictionary-suggestions [data-dictionary-word]").forEach((button) => button.addEventListener("click", () => { $("#dictionary-search").value = button.dataset.dictionaryWord; renderDictionary(button.dataset.dictionaryWord); }));
   bindWordTokens($("#dictionary-results"));
 }
 
+async function renderDictionary(query = "") {
+  const normalized = query.trim();
+  $("#dictionary-suggestions").innerHTML = dictionarySuggestions();
+  if (!normalized) {
+    $("#dictionary-result-meta").textContent = "联网词库 · 输入后即时查询";
+    $("#dictionary-results").innerHTML = `<div class="dictionary-empty">请输入一个日语词、假名或罗马音，开始联网查询。</div>`;
+    $$("#dictionary-suggestions [data-dictionary-word]").forEach((button) => button.addEventListener("click", () => { $("#dictionary-search").value = button.dataset.dictionaryWord; renderDictionary(button.dataset.dictionaryWord); }));
+    return;
+  }
+  const requestId = ++dictionaryRequestId;
+  $("#dictionary-result-meta").textContent = "正在联网查询……";
+  $("#dictionary-results").innerHTML = `<div class="dictionary-empty">正在连接在线词库，请稍候。</div>`;
+  try {
+    const result = await lookupOnlineDictionary(normalized);
+    if (requestId === dictionaryRequestId) renderOnlineDictionaryResults(result);
+  } catch {
+    if (requestId !== dictionaryRequestId) return;
+    $("#dictionary-result-meta").textContent = "在线词库暂时无法连接";
+    $("#dictionary-results").innerHTML = `<div class="dictionary-empty">查询失败，请检查网络后重试。当前版本不提供离线词条。</div>`;
+  }
+}
+
 function showView(viewName) {
   $$(".view").forEach((view) => view.classList.toggle("is-visible", view.id === `${viewName}-view`));
   $$(".nav-item").forEach((item) => item.classList.toggle("is-active", item.dataset.view === viewName));
-  const labels = { home: "今日练习 / 轻轻开始", scenes: "场景库 / 旅行与交通", review: "复习记录 / 留在手边", dictionary: "查词典 / 离线词库", session: "今日练习 / 进行中", "review-detail": "复习记录 / 本次完成" };
+  const labels = { home: "今日练习 / 轻轻开始", scenes: "场景库 / 旅行与交通", review: "复习记录 / 留在手边", dictionary: "查词典 / 联网词库", session: "今日练习 / 进行中", "review-detail": "复习记录 / 本次完成" };
   $("#breadcrumb").innerHTML = (labels[viewName] || labels.home).replace(" / ", " <span>/</span> ");
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
@@ -309,7 +360,9 @@ function bindEvents() {
   $("#reading-toggle").addEventListener("click", () => { state.showReading = !state.showReading; state.showRoman = false; $("#reading-toggle").classList.toggle("is-active", state.showReading); $("#roman-toggle").classList.remove("is-active"); renderMessages(); });
   $("#roman-toggle").addEventListener("click", () => { state.showRoman = !state.showRoman; state.showReading = false; $("#roman-toggle").classList.toggle("is-active", state.showRoman); $("#reading-toggle").classList.remove("is-active"); renderMessages(); });
   $("#session-help").addEventListener("click", () => showToast(state.activeScene.goal)); $("#toggle-theme").addEventListener("click", () => { document.body.classList.toggle("dark-mode"); showToast(document.body.classList.contains("dark-mode") ? "已切换到深色阅读模式" : "已切换到浅色阅读模式"); });
-  $("#dictionary-search").addEventListener("input", (event) => renderDictionary(event.target.value)); $("#clear-dictionary-search").addEventListener("click", () => { $("#dictionary-search").value = ""; renderDictionary(); $("#dictionary-search").focus(); });
+  $("#dictionary-search").addEventListener("input", (event) => { window.clearTimeout(dictionarySearchTimer); dictionarySearchTimer = window.setTimeout(() => renderDictionary(event.target.value), 420); });
+  $("#dictionary-search").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); window.clearTimeout(dictionarySearchTimer); renderDictionary(event.target.value); } });
+  $("#clear-dictionary-search").addEventListener("click", () => { window.clearTimeout(dictionarySearchTimer); $("#dictionary-search").value = ""; renderDictionary(); $("#dictionary-search").focus(); });
   document.addEventListener("click", (event) => { if (!event.target.closest(".word-token, .word-popover")) closeWordPopover(); });
 }
 
