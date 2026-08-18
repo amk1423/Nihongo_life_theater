@@ -164,11 +164,10 @@ function renderReviewList() {
   bindWordTokens($("#review-list"));
 }
 
-const dictionaryCache = new Map();
 let dictionaryRequestId = 0;
 let dictionarySearchTimer = null;
-const onlineDictionaryApi = "https://freedictionaryapi.com/api/v1/entries/ja/";
-const onlineTranslateApi = "https://api.mymemory.translated.net/get";
+const jotobaApi = "https://jotoba.de/api/search/words";
+const ctransProxyApi = "https://r.jina.ai/http://www.ctrans.org/api.php?mode=search";
 
 function dictionarySuggestions() {
   return ["駅", "電車", "食べる", "ホテル", "ありがとう"].map((word) => `<button type="button" class="suggestion-button" data-dictionary-word="${word}">${word}</button>`).join("");
@@ -201,44 +200,85 @@ function katakanaToHiragana(value = "") {
 
 function isKana(value = "") { return /^[ぁ-ゖァ-ヺー]+$/.test(value); }
 
-async function translateOnline(text, source = "en", target = "zh-CN") {
-  const cacheKey = `${source}|${target}|${text}`;
-  if (dictionaryCache.has(cacheKey)) return dictionaryCache.get(cacheKey);
-  const url = `${onlineTranslateApi}?q=${encodeURIComponent(text)}&langpair=${source}|${target}`;
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`translation-${response.status}`);
+const kanaRomajiMap = Object.fromEntries(Object.entries(romajiKanaMap).sort((a, b) => b[1].length - a[1].length).map(([romaji, kana]) => [kana, romaji]));
+const kanaRomajiKeys = Object.keys(kanaRomajiMap).sort((a, b) => b.length - a.length);
+
+function hiraganaToRomaji(value = "") {
+  const text = katakanaToHiragana(value);
+  let result = "";
+  let geminate = false;
+  for (let index = 0; index < text.length;) {
+    if (text[index] === "っ") { geminate = true; index += 1; continue; }
+    if (text[index] === "ー") { result += "-"; index += 1; continue; }
+    const key = kanaRomajiKeys.find((candidate) => text.startsWith(candidate, index)) || text[index];
+    const roman = kanaRomajiMap[key] || key;
+    result += geminate ? roman[0] + roman : roman;
+    geminate = false;
+    index += key.length;
+  }
+  return result;
+}
+
+function ctransContent(text) {
+  return text.split("Markdown Content:").pop().replace(/\[\[([^\]]+)\]\]/g, "$1").replace(/\s+/g, " ").trim();
+}
+
+function parseCtransResult(text, query, option) {
+  const content = ctransContent(text).replace(/^\d+\s+/, "");
+  if (option === "ch") {
+    const marker = new RegExp(`(?:^|\\s)${escapeRegExp(query)}\\s+`).exec(content);
+    if (!marker) return null;
+    const rest = content.slice(marker.index + marker[0].length);
+    const entry = rest.split(/\s+\?\s/)[0].trim();
+    const pinyinMatch = entry.match(/^(\S+)\s+(.+)$/);
+    const japaneseText = pinyinMatch ? pinyinMatch[2] : entry;
+    const japaneseWord = japaneseText.match(/[\u3040-\u30ff\u3400-\u9fffー]+/)?.[0] || "";
+    return { meaning: query, pinyin: pinyinMatch?.[1] || "", japaneseWord };
+  }
+  const parts = content.match(/^(\S+)\s+(\S+)\s+(.+)$/);
+  if (!parts) return null;
+  return { meaning: parts[1], pinyin: parts[2], japaneseWord: query };
+}
+
+async function lookupCtrans(query, option) {
+  const response = await fetch(`${ctransProxyApi}&option=${option}&word=${encodeURIComponent(query)}`);
+  if (!response.ok) throw new Error(`ctrans-${response.status}`);
+  return parseCtransResult(await response.text(), query, option);
+}
+
+async function lookupJotoba(query) {
+  const response = await fetch(jotobaApi, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query, language: "English", no_english: false }) });
+  if (!response.ok) throw new Error(`jotoba-${response.status}`);
   const payload = await response.json();
-  const translated = payload?.responseData?.translatedText?.trim() || text;
-  dictionaryCache.set(cacheKey, translated);
-  return translated;
+  return payload.words || [];
 }
 
 async function lookupOnlineDictionary(query) {
   let lookupTerm = query;
-  let response = await fetch(`${onlineDictionaryApi}${encodeURIComponent(query)}`);
-  if (!response.ok) throw new Error(`dictionary-${response.status}`);
-  let payload = await response.json();
-  if (!payload.entries?.length && /[\u3400-\u9fff]/.test(query)) {
-    lookupTerm = await translateOnline(query, "zh-CN", "ja");
-    response = await fetch(`${onlineDictionaryApi}${encodeURIComponent(lookupTerm)}`);
-    if (!response.ok) throw new Error(`dictionary-${response.status}`);
-    payload = await response.json();
+  let chineseMeaning = "";
+  let ctransResult = null;
+  let words = await lookupJotoba(query);
+  if (!words.length && /[\u3400-\u9fff]/.test(query) && !/[ぁ-ゖァ-ヺ]/.test(query)) {
+    ctransResult = await lookupCtrans(query, "ch");
+    lookupTerm = ctransResult?.japaneseWord || query;
+    chineseMeaning = ctransResult?.meaning || "";
+    words = lookupTerm === query ? [] : await lookupJotoba(lookupTerm);
   }
-  if (!payload.entries?.length) return { query, lookupTerm, entries: [] };
-  const entries = await Promise.all(payload.entries.slice(0, 4).map(async (entry) => {
-    const definitions = entry.senses?.flatMap((sense) => [sense.definition, ...(sense.subsenses || []).map((subsense) => subsense.definition)]).filter(Boolean).slice(0, 3) || [];
-    let meanings = definitions;
-    try { meanings = await Promise.all(definitions.map((definition) => translateOnline(definition))); } catch { /* Keep English definitions if translation is unavailable. */ }
-    const romanization = entry.forms?.find((form) => form.tags?.includes("romanization"))?.word || "";
-    const exactForm = entry.forms?.find((form) => form.word === query)?.word;
-    const canonicalForm = entry.forms?.find((form) => form.tags?.includes("canonical") && /[\u3040-\u30ff\u3400-\u9fff]/.test(form.word) && !form.word.includes(" "))?.word;
-    const word = exactForm || canonicalForm || payload.word || query;
-    const kanaForm = entry.forms?.find((form) => isKana(form.word) && (form.tags?.includes("terminative") || form.tags?.includes("canonical")))?.word || entry.forms?.find((form) => isKana(form.word))?.word || romanToHiragana(romanization);
-    const hiragana = isKana(kanaForm) ? katakanaToHiragana(kanaForm) : romanToHiragana(kanaForm);
+  if (!words.length) return { query, lookupTerm, entries: [] };
+  if (!chineseMeaning) {
+    const firstWord = words[0].reading?.kanji || words[0].reading?.kana || lookupTerm;
+    ctransResult = await lookupCtrans(firstWord, "jp").catch(() => null);
+    chineseMeaning = ctransResult?.meaning || "";
+    if (chineseMeaning === "站" && words[0].senses?.some((sense) => sense.glosses?.some((gloss) => /station|stop/i.test(gloss)))) chineseMeaning = "车站";
+  }
+  const entries = words.slice(0, 4).map((word) => {
+    const japaneseWord = word.reading?.kanji || word.reading?.kana || lookupTerm;
+    const hiragana = word.reading?.kana || "";
     const katakana = hiraganaToKatakana(hiragana);
-    const ipa = entry.pronunciations?.find((pronunciation) => pronunciation.text)?.text || "";
-    return { word, hiragana, katakana, romanization, ipa, part: entry.partOfSpeech || "词条", meanings, source: payload.source?.url || "" };
-  }));
+    const meanings = chineseMeaning ? [chineseMeaning] : ["暂未返回中文释义"];
+    const part = word.senses?.[0]?.pos?.[0] ? (typeof word.senses[0].pos[0] === "string" ? word.senses[0].pos[0] : Object.keys(word.senses[0].pos[0])[0]) : "词条";
+    return { word: japaneseWord, hiragana, katakana, romanization: hiraganaToRomaji(hiragana), part, meanings, source: "北辞郎 / Jotoba" };
+  });
   return { query, lookupTerm, entries };
 }
 
@@ -248,7 +288,7 @@ function renderOnlineDictionaryResults(result) {
   $("#dictionary-result-meta").textContent = result.entries.length ? `联网找到 ${result.entries.length} 个词条${result.lookupTerm !== normalized ? ` · 按“${result.lookupTerm}”查询` : ""}` : `联网词库没有找到“${normalized}”`;
   $("#dictionary-results").innerHTML = result.entries.length ? result.entries.map((entry) => `<article class="dictionary-card">
     <div class="dictionary-main"><h3>${renderJapaneseText(entry.word)}</h3><span class="dictionary-reading">${entry.hiragana ? `平假名 ${escapeHtml(entry.hiragana)} · 片假名 ${escapeHtml(entry.katakana)}` : "暂无假名"}<br>${escapeHtml(entry.romanization || entry.ipa || "暂无罗马音")}</span></div>
-    <div class="dictionary-meaning-wrap"><div class="dictionary-meaning">${entry.meanings.map((meaning) => escapeHtml(meaning)).join("；")} <span class="dictionary-reading">· ${escapeHtml(entry.part)}</span></div><div class="dictionary-example">在线释义 · 数据来自公开日语词典</div></div>
+    <div class="dictionary-meaning-wrap"><div class="dictionary-meaning">${entry.meanings.map((meaning) => escapeHtml(meaning)).join("；")} <span class="dictionary-reading">· ${escapeHtml(entry.part)}</span></div><div class="dictionary-example">在线词典 · ${escapeHtml(entry.source)}</div></div>
     <button type="button" class="dictionary-audio" data-speak="${encodeURIComponent(entry.word)}" title="朗读词语" aria-label="朗读 ${entry.word}">◖</button>
   </article>`).join("") : `<div class="dictionary-empty">联网词库没有找到这个词。可以换成日语、假名或罗马音再试。</div>`;
   $$("#dictionary-results [data-speak]").forEach((button) => button.addEventListener("click", () => speak(decodeURIComponent(button.dataset.speak))));
