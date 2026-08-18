@@ -1,0 +1,15 @@
+{
+  "name": "日语生活剧场",
+  "short_name": "日语剧场",
+  "description": "用5分钟生活场景练习真实日语。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f6f7fa",
+  "theme_color": "#4750bd",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

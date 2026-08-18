@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f7f8fb" />
+    <meta name="description" content="日语生活剧场：用5分钟生活场景练习真实日语。" />
+    <title>日语生活剧场 · 5分钟场景练习</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icon.svg" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <aside class="sidebar" aria-label="主导航">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div>
+            <div class="brand-name">日语生活剧场</div>
+            <div class="brand-subtitle">5分钟，练一段真实日语</div>
+          </div>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item is-active" data-view="home" aria-label="今日练习">
+            <span class="nav-icon nav-icon-home" aria-hidden="true"></span>
+            <span>今日练习</span>
+          </button>
+          <button class="nav-item" data-view="scenes" aria-label="场景库">
+            <span class="nav-icon nav-icon-scene" aria-hidden="true"></span>
+            <span>场景库</span>
+          </button>
+          <button class="nav-item" data-view="review" aria-label="复习记录">
+            <span class="nav-icon nav-icon-review" aria-hidden="true"></span>
+            <span>复习记录</span>
+          </button>
+          <button class="nav-item" data-view="dictionary" aria-label="查词典">
+            <span class="nav-icon nav-icon-dictionary" aria-hidden="true"></span>
+            <span>查词典</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="streak-panel">
+            <span class="streak-spark" aria-hidden="true">✦</span>
+            <div>
+              <strong id="sidebar-streak">1 天连续</strong>
+              <span>保持今天的节奏</span>
+            </div>
+          </div>
+          <div class="offline-note"><span class="offline-dot"></span>离线模式可用</div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="breadcrumb" id="breadcrumb">今日练习 <span>/</span> 轻轻开始</div>
+          <div class="topbar-actions">
+            <button class="install-button" id="install-app" type="button" hidden>安装到手机</button>
+            <button class="icon-button" id="toggle-theme" title="切换阅读模式" aria-label="切换阅读模式">☼</button>
+            <div class="avatar" aria-label="个人头像">M</div>
+          </div>
+        </header>
+
+        <section id="home-view" class="view is-visible" aria-labelledby="home-title">
+          <div class="home-intro">
+            <div>
+              <p class="eyebrow">TUESDAY · 8月18日</p>
+              <h1 id="home-title">今天，练习一小段<br /><em>真实日语</em></h1>
+              <p class="intro-copy">不急着记住所有内容。先在一个生活场景里，<br />听懂一句，然后自然地回应。</p>
+              <button class="primary-button" id="start-today">开始今日练习 <span aria-hidden="true">→</span></button>
+            </div>
+            <div class="intro-illustration" aria-hidden="true">
+              <div class="sun-disc"></div>
+              <div class="rail-line rail-line-one"></div>
+              <div class="rail-line rail-line-two"></div>
+              <div class="station-sign"><span>駅</span><small>STATION</small></div>
+              <div class="paper-ticket"><span>東京</span><strong>¥ 410</strong><small>きっぷ</small></div>
+              <div class="illustration-caption">旅は、ひとことから。</div>
+            </div>
+          </div>
+
+          <div class="home-grid">
+            <div class="scene-section">
+              <div class="section-heading">
+                <div>
+                  <p class="section-kicker">SCENE LIBRARY</p>
+                  <h2>选一个今天想去的地方</h2>
+                </div>
+                <button class="text-button" data-view="scenes">查看全部 <span aria-hidden="true">↗</span></button>
+              </div>
+              <div class="scene-list" id="home-scenes"></div>
+            </div>
+
+            <aside class="progress-rail">
+              <div class="section-kicker">YOUR RHYTHM</div>
+              <div class="progress-number"><span id="home-streak">1</span><small>天连续</small></div>
+              <div class="progress-bar"><span id="progress-bar-fill"></span></div>
+              <p id="progress-copy">再完成一次练习，就能保持今天的节奏。</p>
+              <div class="progress-divider"></div>
+              <div class="review-stat"><span>待复习表达</span><strong id="home-review-count">3</strong></div>
+              <button class="outline-button" data-view="review">去复习 <span aria-hidden="true">→</span></button>
+            </aside>
+          </div>
+        </section>
+
+        <section id="scenes-view" class="view" aria-labelledby="scenes-title">
+          <div class="page-heading">
+            <p class="eyebrow">SCENE LIBRARY · 旅行与交通</p>
+            <h1 id="scenes-title">每个场景，都是一小段旅程</h1>
+            <p>选一个你可能真的会遇到的时刻，练习如何听懂和回应。</p>
+          </div>
+          <div class="scene-library-grid" id="all-scenes"></div>
+        </section>
+
+        <section id="review-view" class="view" aria-labelledby="review-title">
+          <div class="page-heading review-heading">
+            <div>
+              <p class="eyebrow">REVIEW NOTES</p>
+              <h1 id="review-title">把今天遇到的句子，留在手边</h1>
+              <p>每次只复习几句，让表达慢慢变成你的反应。</p>
+            </div>
+            <div class="review-total"><strong id="review-total-count">3</strong><span>句待复习</span></div>
+          </div>
+          <div class="review-list" id="review-list"></div>
+        </section>
+
+        <section id="dictionary-view" class="view" aria-labelledby="dictionary-title">
+          <div class="dictionary-heading">
+            <div class="page-heading">
+              <p class="eyebrow">OFFLINE DICTIONARY</p>
+              <h1 id="dictionary-title">想知道一个词，就查一下</h1>
+              <p>输入日语、中文或罗马音，先从旅行中最常见的表达开始。</p>
+            </div>
+            <div class="dictionary-search-wrap">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <input id="dictionary-search" type="search" autocomplete="off" placeholder="搜索：駅、车站、eki…" aria-label="搜索日语词汇" />
+              <button id="clear-dictionary-search" class="clear-search" type="button" aria-label="清空搜索">×</button>
+            </div>
+          </div>
+          <div class="dictionary-tools">
+            <div class="section-kicker">QUICK LOOKUP</div>
+            <div class="dictionary-suggestions" id="dictionary-suggestions"></div>
+          </div>
+          <div class="dictionary-result-meta" id="dictionary-result-meta"></div>
+          <div class="dictionary-results" id="dictionary-results"></div>
+        </section>
+
+        <section id="session-view" class="view session-view" aria-labelledby="session-title">
+          <div class="session-topline">
+            <button class="back-button" id="back-home"><span aria-hidden="true">←</span> 返回场景</button>
+            <div class="session-progress"><span id="session-step">01</span> / <span id="session-total">04</span></div>
+            <div class="session-timer" id="session-timer">05:00</div>
+          </div>
+          <div class="session-layout">
+            <div class="dialogue-panel">
+              <div class="dialogue-context">
+                <div class="context-icon" id="session-icon">駅</div>
+                <div>
+                  <p class="section-kicker">NOW PLAYING</p>
+                  <h1 id="session-title">车站买票</h1>
+                </div>
+                <button class="quiet-button" id="session-help" title="查看场景目标">?</button>
+              </div>
+              <div class="goal-strip" id="session-goal">你要去哪里？先学会说出目的地。</div>
+              <div class="chat-log" id="chat-log" aria-live="polite"></div>
+              <div class="composer-wrap">
+                <div class="composer-tools">
+                  <button class="tool-button is-active" id="hint-toggle">提示 <span>⌄</span></button>
+                  <button class="tool-button" id="reading-toggle">假名 <span>⌄</span></button>
+                  <button class="tool-button" id="roman-toggle">罗马音 <span>⌄</span></button>
+                  <span class="word-help">点击带下划线的词，看中文意思</span>
+                </div>
+                <div class="composer-hint" id="composer-hint"></div>
+                <form class="composer" id="composer-form">
+                  <input id="message-input" autocomplete="off" placeholder="输入你的回答，或选择下面的表达" aria-label="输入你的日语回答" />
+                  <button type="submit" class="send-button" aria-label="发送回答">↗</button>
+                </form>
+                <div class="quick-replies" id="quick-replies"></div>
+              </div>
+            </div>
+            <aside class="session-side-panel">
+              <div class="side-note-card">
+                <div class="note-line"></div>
+                <p class="section-kicker">TRAVEL NOTE</p>
+                <h3>先说得简单一点，<br /><em>也完全没关系。</em></h3>
+                <p>真实交流里，对方会用表情、动作和上下文帮助你。这里也一样。</p>
+              </div>
+              <div class="phrase-preview">
+                <div class="section-kicker">本场景会遇到</div>
+                <div id="phrase-preview-list"></div>
+              </div>
+              <button class="finish-button" id="finish-session">结束并查看复盘</button>
+            </aside>
+          </div>
+        </section>
+
+        <section id="review-detail-view" class="view review-detail-view" aria-labelledby="review-detail-title">
+          <div class="review-detail-card">
+            <div class="review-complete-icon">✓</div>
+            <p class="eyebrow">SESSION COMPLETE</p>
+            <h1 id="review-detail-title">这段旅程，完成得很好。</h1>
+            <p class="review-lead" id="review-lead">你刚刚在车站完成了一次真实的日语交流。</p>
+            <div class="review-summary" id="review-summary"></div>
+            <div class="review-detail-actions">
+              <button class="primary-button" id="review-again">再练一遍 <span aria-hidden="true">↗</span></button>
+              <button class="text-button" data-view="home">回到首页</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <div class="word-popover" id="word-popover" role="dialog" aria-live="polite" aria-hidden="true">
+      <div class="word-popover-jp" id="word-popover-jp"></div>
+      <div class="word-popover-meaning" id="word-popover-meaning"></div>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>
