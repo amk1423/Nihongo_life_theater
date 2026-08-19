@@ -20,7 +20,7 @@ py -m http.server 4173
 
 ```powershell
 $env:DEEPSEEK_API_KEY = "你的密钥"
-$env:DEEPSEEK_MODEL = "deepseek-chat"
+$env:DEEPSEEK_MODEL = "deepseek-v4-flash"
 node server.js
 ```
 
