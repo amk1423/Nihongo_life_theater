@@ -231,7 +231,11 @@ function parseCtransResult(text, query, option) {
     const rest = content.slice(marker.index + marker[0].length);
     const entry = rest.split(/\s+\?\s/)[0].trim();
     const pinyinMatch = entry.match(/^(\S+)\s+(.+)$/);
-    const japaneseText = pinyinMatch ? pinyinMatch[2] : entry;
+    // 北辞郎会在日语词前加上“〈地名〉”“〈例〉”等分类标签，不能把标签当成词条。
+    const japaneseText = (pinyinMatch ? pinyinMatch[2] : entry)
+      .replace(/〈[^〉]*〉/g, "")
+      .replace(/（[^）]*）/g, "")
+      .trim();
     const japaneseWord = japaneseText.match(/[\u3040-\u30ff\u3400-\u9fffー]+/)?.[0] || "";
     return { meaning: query, pinyin: pinyinMatch?.[1] || "", japaneseWord };
   }
