@@ -107,7 +107,10 @@ const wordMeanings = {
   "20分": "20分钟",
   "ここ": "这里",
   "到着": "到达",
-  "しました": "已经做了／完成了"
+  "しました": "已经做了／完成了",
+  "充電器": "充电器",
+  "出口": "出口",
+  "入り口": "入口"
 };
 
 const defaultProgress = { streak: 1, completed: 0, reviewItems: [], lastScene: "ticket" };
@@ -179,11 +182,14 @@ const jotobaApi = "https://jotoba.de/api/search/words";
 const jotobaNamesApi = "https://jotoba.de/api/search/names";
 const wiktionaryApi = "https://zh.wiktionary.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&origin=*";
 let localDictionaryPromise = null;
+let localExtendedDictionaryPromise = null;
 let localNamesPromise = null;
 let localChineseDictionaryPromise = null;
+let localExtendedChineseDictionaryPromise = null;
+let localReadingIndexPromise = null;
 
 const localChineseAliases = {
-  "车站": "駅", "火车": "電車", "电车": "電車", "涩谷": "渋谷", "涉谷": "渋谷", "新宿": "新宿", "东京": "東京", "酒店": "ホテル", "旅馆": "ホテル", "吃": "食べる", "谢谢": "ありがとう", "出租车": "タクシー"
+  "车站": "駅", "火车": "電車", "电车": "電車", "涩谷": "渋谷", "涉谷": "渋谷", "新宿": "新宿", "东京": "東京", "酒店": "ホテル", "旅馆": "ホテル", "吃": "食べる", "谢谢": "ありがとう", "出租车": "タクシー", "地铁": "地下鉄", "机场": "空港", "护照": "パスポート", "地图": "地図", "钱包": "財布", "行李": "荷物", "火车站": "駅", "车票": "切符", "药店": "薬局", "餐厅": "レストラン", "菜单": "メニュー", "厕所": "トイレ", "电梯": "エレベーター", "便利店": "コンビニ", "洗手间": "お手洗い", "雨伞": "傘", "充电器": "充電器", "出口": "出口", "入口": "入り口"
 };
 
 const preferredNameReadings = {
@@ -261,6 +267,16 @@ async function loadLocalDictionary() {
   return localDictionaryPromise;
 }
 
+async function loadLocalExtendedDictionary() {
+  if (!localExtendedDictionaryPromise) {
+    localExtendedDictionaryPromise = fetch("./data/jmdict-extended.json?v=3.6.2").then((response) => {
+      if (!response.ok) throw new Error(`local-extended-dictionary-${response.status}`);
+      return response.json();
+    });
+  }
+  return localExtendedDictionaryPromise;
+}
+
 async function loadLocalNames() {
   if (!localNamesPromise) {
     localNamesPromise = fetch("./data/names-common.json?v=1").then((response) => {
@@ -279,6 +295,26 @@ async function loadLocalChineseDictionary() {
     });
   }
   return localChineseDictionaryPromise;
+}
+
+async function loadLocalExtendedChineseDictionary() {
+  if (!localExtendedChineseDictionaryPromise) {
+    localExtendedChineseDictionaryPromise = fetch("./data/jc-special.json?v=2006").then((response) => {
+      if (!response.ok) throw new Error(`local-extended-chinese-dictionary-${response.status}`);
+      return response.json();
+    });
+  }
+  return localExtendedChineseDictionaryPromise;
+}
+
+async function loadLocalReadingIndex() {
+  if (!localReadingIndexPromise) {
+    localReadingIndexPromise = fetch("./data/jmdict-readings.json?v=3.6.2").then((response) => {
+      if (!response.ok) throw new Error(`local-reading-index-${response.status}`);
+      return response.json();
+    });
+  }
+  return localReadingIndexPromise;
 }
 
 function dictionarySearchTerm(query) {
@@ -331,30 +367,50 @@ function chineseMeaningScore(query, rawMeaning) {
   return 0;
 }
 
-function mapChineseDictionaryEntry(word, rawMeaning, dictionary) {
-  const localEntry = dictionary.entries.find((entry) => entry.word === word);
+function mapChineseDictionaryEntry(word, rawMeaning, dictionary, readingIndex = null) {
+  const normalizedWord = readingIndex ? normalizeExpandedHeadword(word, readingIndex) : word;
+  const localEntry = dictionary.entries.find((entry) => entry.word === normalizedWord);
+  const readings = localEntry?.readings || readingIndex?.readings?.[normalizedWord] || [];
   const parsedReading = rawMeaning.match(/^[（(]([^）)]+)[）)]/)?.[1]?.replace(/[0-9⓪①②③④⑤⑥⑦⑧⑨⑩]+$/, "") || "";
-  const hiragana = localEntry?.readings[0] || (isKana(word) ? katakanaToHiragana(word) : isKana(parsedReading) ? katakanaToHiragana(parsedReading) : "");
+  const hiragana = readings[0] || (isKana(normalizedWord) ? katakanaToHiragana(normalizedWord) : isKana(parsedReading) ? katakanaToHiragana(parsedReading) : "");
   return {
-    word,
+    word: normalizedWord,
     hiragana,
     katakana: hiraganaToKatakana(hiragana),
     romanization: hiragana ? hiraganaToRomaji(hiragana) : "",
     part: localEntry ? formatPartOfSpeech(localEntry.pos) : "词条",
     meanings: [cleanChineseMeaning(rawMeaning)],
-    source: "本地日中词库"
+    source: readingIndex ? "本地扩展日中词库" : "本地日中词库"
   };
 }
 
-function lookupChineseReverse(query, chineseDictionary, dictionary) {
+function normalizeExpandedHeadword(word, readingIndex) {
+  const suffixes = "人枚冊軒個台本件匹頭羽着回度部番";
+  const base = word.slice(0, -1);
+  return suffixes.includes(word.at(-1)) && readingIndex.readings?.[base] ? base : word;
+}
+
+function lookupChineseReverse(query, chineseDictionary, dictionary, readingIndex = null) {
   if (query.length < 2) return [];
+  const commonByWord = new Map(dictionary.entries.map((entry) => [entry.word, entry]));
   const matches = Object.entries(chineseDictionary)
-    .map(([word, meaning]) => ({ word, meaning, score: chineseMeaningScore(query, meaning), common: dictionary.entries.find((entry) => entry.word === word)?.common }))
+    .map(([word, meaning]) => ({ word, meaning, score: chineseMeaningScore(query, meaning), common: commonByWord.get(word)?.common }))
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score || Number(b.common) - Number(a.common) || a.word.length - b.word.length)
     .slice(0, 8);
   const bestScore = matches[0]?.score || 0;
-  return matches.filter((entry) => entry.score >= Math.max(78, bestScore - 12)).map((entry) => mapChineseDictionaryEntry(entry.word, entry.meaning, dictionary));
+  return matches.filter((entry) => entry.score >= Math.max(78, bestScore - 12)).map((entry) => mapChineseDictionaryEntry(entry.word, entry.meaning, dictionary, readingIndex));
+}
+
+function findJapaneseCandidates(query, dictionary) {
+  const term = dictionarySearchTerm(query);
+  const kanaTerm = isKana(term) ? katakanaToHiragana(term) : romanToHiragana(term);
+  const exactWord = dictionary.entries.filter((entry) => entry.word === term);
+  const exact = exactWord.length ? exactWord : dictionary.entries.filter((entry) => entry.readings.includes(term) || entry.readings.includes(kanaTerm));
+  const preferredWord = String(query).toLowerCase() === "eki" ? "駅" : "";
+  if (preferredWord && exact.length) exact.sort((a, b) => Number(b.word === preferredWord) - Number(a.word === preferredWord));
+  const candidates = exact.length ? exact : dictionary.entries.filter((entry) => entry.word.startsWith(term) || (kanaTerm && entry.readings.some((reading) => reading.startsWith(kanaTerm))));
+  return { term, candidates: candidates.slice(0, 8) };
 }
 
 async function lookupLocalDictionary(query) {
@@ -369,15 +425,20 @@ async function lookupLocalDictionary(query) {
   if (isCjkQuery(query) && !localChineseAliases[query]) {
     const chineseMatches = lookupChineseReverse(query, chineseDictionary, dictionary);
     if (chineseMatches.length) return { query, lookupTerm: query, entries: chineseMatches };
+    const extendedChineseDictionary = await loadLocalExtendedChineseDictionary();
+    const expandedChinese = { ...extendedChineseDictionary, ...chineseDictionary };
+    const readingIndex = await loadLocalReadingIndex();
+    const expandedMatches = lookupChineseReverse(query, expandedChinese, dictionary, readingIndex);
+    if (expandedMatches.length) return { query, lookupTerm: query, entries: expandedMatches };
   }
-  const term = dictionarySearchTerm(query);
-  const kanaTerm = isKana(term) ? katakanaToHiragana(term) : romanToHiragana(term);
-  const exactWord = dictionary.entries.filter((entry) => entry.word === term);
-  const exact = exactWord.length ? exactWord : dictionary.entries.filter((entry) => entry.readings.includes(term) || entry.readings.includes(kanaTerm));
-  const preferredWord = String(query).toLowerCase() === "eki" ? "駅" : "";
-  if (preferredWord && exact.length) exact.sort((a, b) => Number(b.word === preferredWord) - Number(a.word === preferredWord));
-  const candidates = exact.length ? exact : dictionary.entries.filter((entry) => entry.word.startsWith(term) || (kanaTerm && entry.readings.some((reading) => reading.startsWith(kanaTerm)))).slice(0, 8);
-  return { query, lookupTerm: term, entries: candidates.slice(0, 8).map((entry) => mapLocalEntry(entry, chineseDictionary)) };
+  const localCandidates = findJapaneseCandidates(query, dictionary);
+  if (localCandidates.candidates.length) return { query, lookupTerm: localCandidates.term, entries: localCandidates.candidates.map((entry) => mapLocalEntry(entry, chineseDictionary)) };
+  const extendedDictionary = await loadLocalExtendedDictionary();
+  const expandedCandidates = findJapaneseCandidates(query, extendedDictionary);
+  if (expandedCandidates.candidates.length) {
+    return { query, lookupTerm: expandedCandidates.term, entries: expandedCandidates.candidates.map((entry) => ({ ...mapLocalEntry(entry, chineseDictionary), source: "本地 JMdict 全量" })) };
+  }
+  return { query, lookupTerm: localCandidates.term, entries: [] };
 }
 
 function extractWiktionaryChineseMeaning(extract = "") {
