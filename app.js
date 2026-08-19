@@ -80,7 +80,12 @@ const wordMeanings = {
   "どこ": "哪里",
   "行きたい": "想去",
   "渋谷": "涩谷",
+  "新宿": "新宿（东京地名）",
   "駅": "车站",
+  "食べる": "吃",
+  "ホテル": "酒店／旅馆",
+  "東京": "东京",
+  "タクシー": "出租车",
   "この": "这个",
   "電車": "电车",
   "大丈夫": "没问题／可以",
@@ -167,7 +172,29 @@ function renderReviewList() {
 let dictionaryRequestId = 0;
 let dictionarySearchTimer = null;
 const jotobaApi = "https://jotoba.de/api/search/words";
-const ctransProxyApi = "https://r.jina.ai/http://www.ctrans.org/api.php?mode=search";
+const jotobaNamesApi = "https://jotoba.de/api/search/names";
+const wiktionaryApi = "https://zh.wiktionary.org/w/api.php?action=query&format=json&prop=extracts&explaintext=1&origin=*";
+let localDictionaryPromise = null;
+let localNamesPromise = null;
+
+const localChineseAliases = {
+  "车站": "駅", "火车": "電車", "电车": "電車", "涩谷": "渋谷", "涉谷": "渋谷", "新宿": "新宿", "东京": "東京", "酒店": "ホテル", "旅馆": "ホテル", "吃": "食べる", "谢谢": "ありがとう", "出租车": "タクシー"
+};
+
+const preferredNameReadings = {
+  "新宿": "しんじゅく", "渋谷": "しぶや", "東京": "とうきょう", "大阪": "おおさか", "京都": "きょうと", "成田": "なりた", "羽田": "はねだ"
+};
+
+const dictionaryPosLabels = { n: "名词", v1: "一段动词", v5u: "五段动词", v5k: "五段动词", v5s: "五段动词", vt: "他动词", vi: "自动词", "adj-i": "い形容词", "adj-na": "な形容词", adv: "副词", ctr: "量词", pn: "专名", exp: "表达" };
+const nameTypeLabels = { Place: "地名", RailwayStation: "车站", Person: "人名", Surname: "姓氏", Company: "公司名", Organization: "组织名", Product: "产品名", Work: "作品名", Female: "女性名", Male: "男性名", Given: "名字", Unclassified: "专名" };
+
+function formatPartOfSpeech(values = []) {
+  return [...new Set(values.map((value) => dictionaryPosLabels[value] || value))].join(" / ") || "词条";
+}
+
+function formatNameType(values = []) {
+  return [...new Set(values.map((value) => nameTypeLabels[value] || value))].join(" / ") || "专名";
+}
 
 function dictionarySuggestions() {
   return ["駅", "電車", "食べる", "ホテル", "ありがとう"].map((word) => `<button type="button" class="suggestion-button" data-dictionary-word="${word}">${word}</button>`).join("");
@@ -219,35 +246,87 @@ function hiraganaToRomaji(value = "") {
   return result;
 }
 
-function ctransContent(text) {
-  return text.split("Markdown Content:").pop().replace(/\[\[([^\]]+)\]\]/g, "$1").replace(/\s+/g, " ").trim();
-}
-
-function parseCtransResult(text, query, option) {
-  const content = ctransContent(text).replace(/^\d+\s+/, "");
-  if (option === "ch") {
-    const marker = new RegExp(`(?:^|\\s)${escapeRegExp(query)}\\s+`).exec(content);
-    if (!marker) return null;
-    const rest = content.slice(marker.index + marker[0].length);
-    const entry = rest.split(/\s+\?\s/)[0].trim();
-    const pinyinMatch = entry.match(/^(\S+)\s+(.+)$/);
-    // 北辞郎会在日语词前加上“〈地名〉”“〈例〉”等分类标签，不能把标签当成词条。
-    const japaneseText = (pinyinMatch ? pinyinMatch[2] : entry)
-      .replace(/〈[^〉]*〉/g, "")
-      .replace(/（[^）]*）/g, "")
-      .trim();
-    const japaneseWord = japaneseText.match(/[\u3040-\u30ff\u3400-\u9fffー]+/)?.[0] || "";
-    return { meaning: query, pinyin: pinyinMatch?.[1] || "", japaneseWord };
+async function loadLocalDictionary() {
+  if (!localDictionaryPromise) {
+    localDictionaryPromise = fetch("./data/jmdict-common.json?v=3.6.2").then((response) => {
+      if (!response.ok) throw new Error(`local-dictionary-${response.status}`);
+      return response.json();
+    });
   }
-  const parts = content.match(/^(\S+)\s+(\S+)\s+(.+)$/);
-  if (!parts) return null;
-  return { meaning: parts[1], pinyin: parts[2], japaneseWord: query };
+  return localDictionaryPromise;
 }
 
-async function lookupCtrans(query, option) {
-  const response = await fetch(`${ctransProxyApi}&option=${option}&word=${encodeURIComponent(query)}`);
-  if (!response.ok) throw new Error(`ctrans-${response.status}`);
-  return parseCtransResult(await response.text(), query, option);
+async function loadLocalNames() {
+  if (!localNamesPromise) {
+    localNamesPromise = fetch("./data/names-common.json?v=1").then((response) => {
+      if (!response.ok) throw new Error(`local-names-${response.status}`);
+      return response.json();
+    });
+  }
+  return localNamesPromise;
+}
+
+function dictionarySearchTerm(query) {
+  return localChineseAliases[query] || query;
+}
+
+function localChineseMeaning(word, glosses = []) {
+  if (wordMeanings[word]) return wordMeanings[word];
+  return glosses.length ? `英文释义：${glosses.slice(0, 3).join("；")}` : "暂未找到中文释义";
+}
+
+function mapLocalEntry(entry) {
+  const hiragana = entry.readings[0] || "";
+  return {
+    word: entry.word,
+    hiragana,
+    katakana: hiraganaToKatakana(hiragana),
+    romanization: hiraganaToRomaji(hiragana),
+    part: formatPartOfSpeech(entry.pos),
+    meanings: [localChineseMeaning(entry.word, entry.glosses)],
+    glosses: entry.glosses,
+    source: "本地 JMdict"
+  };
+}
+
+async function lookupLocalDictionary(query) {
+  const names = await loadLocalNames();
+  const nameTerm = dictionarySearchTerm(query);
+  const localNameMatches = names.entries.filter((entry) => entry.word === nameTerm || entry.hiragana === nameTerm || entry.romanization.toLowerCase() === nameTerm.toLowerCase());
+  if (localNameMatches.length) {
+    return { query, lookupTerm: nameTerm, entries: localNameMatches.map((entry) => ({ word: entry.word, hiragana: entry.hiragana, katakana: hiraganaToKatakana(entry.hiragana), romanization: entry.romanization, part: "地名", meanings: [entry.meaning], source: "本地常用专名" })) };
+  }
+  const dictionary = await loadLocalDictionary();
+  const term = dictionarySearchTerm(query);
+  const kanaTerm = isKana(term) ? katakanaToHiragana(term) : romanToHiragana(term);
+  const exact = dictionary.entries.filter((entry) => entry.word === term || entry.readings.includes(term) || entry.readings.includes(kanaTerm));
+  const candidates = exact.length ? exact : dictionary.entries.filter((entry) => entry.word.startsWith(term) || entry.readings.some((reading) => reading.startsWith(kanaTerm))).slice(0, 8);
+  return { query, lookupTerm: term, entries: candidates.slice(0, 8).map(mapLocalEntry) };
+}
+
+function extractWiktionaryChineseMeaning(extract = "") {
+  const japaneseSection = extract.match(/==\s*(?:日語|日语|日本語)\s*==([\s\S]*?)(?=\n==|$)/)?.[1] || extract;
+  const candidates = japaneseSection.split(/\r?\n/).map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("=") && /[\u4e00-\u9fff]/.test(line) && !/[ぁ-ゖァ-ヺ]/.test(line))
+    .filter((line) => !/^(詞源|词源|發音|发音|名詞|名词|動詞|动词|形容詞|形容词|來源|来源|參考|参考|讀音|读音)/.test(line));
+  return [...new Set(candidates)].slice(0, 3);
+}
+
+async function lookupWiktionaryMeaning(word) {
+  const response = await fetch(`${wiktionaryApi}&titles=${encodeURIComponent(word)}`);
+  if (!response.ok) return [];
+  const payload = await response.json();
+  const page = Object.values(payload.query?.pages || {})[0];
+  return extractWiktionaryChineseMeaning(page?.extract || "");
+}
+
+async function enrichChineseMeanings(result) {
+  const targets = result.entries.filter((entry) => entry.meanings.some((meaning) => meaning.startsWith("英文释义：") || meaning === "暂未找到中文释义")).slice(0, 3);
+  const translations = await Promise.all(targets.map((entry) => lookupWiktionaryMeaning(entry.word).catch(() => [])));
+  translations.forEach((meanings, index) => {
+    if (meanings.length) targets[index].meanings = meanings;
+  });
+  return result;
 }
 
 async function lookupJotoba(query) {
@@ -257,44 +336,52 @@ async function lookupJotoba(query) {
   return payload.words || [];
 }
 
-async function lookupOnlineDictionary(query) {
-  let lookupTerm = query;
-  let chineseMeaning = "";
-  let ctransResult = null;
-  let words = await lookupJotoba(query);
-  if (!words.length && /[\u3400-\u9fff]/.test(query) && !/[ぁ-ゖァ-ヺ]/.test(query)) {
-    ctransResult = await lookupCtrans(query, "ch");
-    lookupTerm = ctransResult?.japaneseWord || query;
-    chineseMeaning = ctransResult?.meaning || "";
-    words = lookupTerm === query ? [] : await lookupJotoba(lookupTerm);
-  }
-  if (!words.length) return { query, lookupTerm, entries: [] };
-  if (!chineseMeaning) {
-    const firstWord = words[0].reading?.kanji || words[0].reading?.kana || lookupTerm;
-    ctransResult = await lookupCtrans(firstWord, "jp").catch(() => null);
-    chineseMeaning = ctransResult?.meaning || "";
-    if (chineseMeaning === "站" && words[0].senses?.some((sense) => sense.glosses?.some((gloss) => /station|stop/i.test(gloss)))) chineseMeaning = "车站";
-  }
-  const entries = words.slice(0, 4).map((word) => {
-    const japaneseWord = word.reading?.kanji || word.reading?.kana || lookupTerm;
-    const hiragana = word.reading?.kana || "";
-    const katakana = hiraganaToKatakana(hiragana);
-    const meanings = chineseMeaning ? [chineseMeaning] : ["暂未返回中文释义"];
-    const part = word.senses?.[0]?.pos?.[0] ? (typeof word.senses[0].pos[0] === "string" ? word.senses[0].pos[0] : Object.keys(word.senses[0].pos[0])[0]) : "词条";
-    return { word: japaneseWord, hiragana, katakana, romanization: hiraganaToRomaji(hiragana), part, meanings, source: "北辞郎 / Jotoba" };
+async function lookupJotobaNames(query) {
+  const response = await fetch(jotobaNamesApi, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query }) });
+  if (!response.ok) throw new Error(`jotoba-names-${response.status}`);
+  const payload = await response.json();
+  return (payload.names || []).filter((name) => name.kanji === query || name.kana === query).sort((a, b) => {
+    const preferred = preferredNameReadings[query];
+    return Number(b.kana === preferred) - Number(a.kana === preferred);
   });
-  return { query, lookupTerm, entries };
+}
+
+function mapNameEntries(names) {
+  return names.slice(0, 6).map((name) => {
+    const hiragana = name.kana || "";
+    const type = formatNameType(name.name_type);
+    const meaning = name.name_type?.includes("Place") ? "地名" : "日本专名";
+    return { word: name.kanji || name.kana, hiragana, katakana: hiraganaToKatakana(hiragana), romanization: name.transcription || hiraganaToRomaji(hiragana), part: type, meanings: [meaning], source: "Jotoba / JMnedict" };
+  });
+}
+
+async function lookupOnlineDictionary(query) {
+  const localResult = await lookupLocalDictionary(query);
+  if (localResult.entries.length) return enrichChineseMeanings(localResult);
+
+  const names = await lookupJotobaNames(dictionarySearchTerm(query)).catch(() => []);
+  if (names.length) return { query, lookupTerm: dictionarySearchTerm(query), entries: mapNameEntries(names) };
+
+  const words = await lookupJotoba(dictionarySearchTerm(query)).catch(() => []);
+  const entries = words.slice(0, 6).map((word) => {
+    const japaneseWord = word.reading?.kanji || word.reading?.kana || dictionarySearchTerm(query);
+    const hiragana = word.reading?.kana || "";
+    const rawPart = word.senses?.[0]?.pos?.[0] ? (typeof word.senses[0].pos[0] === "string" ? word.senses[0].pos[0] : Object.keys(word.senses[0].pos[0])[0]) : "词条";
+    const part = formatPartOfSpeech([rawPart]);
+    return { word: japaneseWord, hiragana, katakana: hiraganaToKatakana(hiragana), romanization: hiraganaToRomaji(hiragana), part, meanings: ["暂未找到中文释义"], source: "Jotoba 在线补充" };
+  });
+  return enrichChineseMeanings({ query, lookupTerm: dictionarySearchTerm(query), entries });
 }
 
 function renderOnlineDictionaryResults(result) {
   const normalized = result.query.trim();
   $("#dictionary-suggestions").innerHTML = dictionarySuggestions();
-  $("#dictionary-result-meta").textContent = result.entries.length ? `联网找到 ${result.entries.length} 个词条${result.lookupTerm !== normalized ? ` · 按“${result.lookupTerm}”查询` : ""}` : `联网词库没有找到“${normalized}”`;
+  $("#dictionary-result-meta").textContent = result.entries.length ? `找到 ${result.entries.length} 个词条${result.lookupTerm !== normalized ? ` · 按“${result.lookupTerm}”查询` : ""}` : `词库没有找到“${normalized}”`;
   $("#dictionary-results").innerHTML = result.entries.length ? result.entries.map((entry) => `<article class="dictionary-card">
     <div class="dictionary-main"><h3>${renderJapaneseText(entry.word)}</h3><span class="dictionary-reading">${entry.hiragana ? `平假名 ${escapeHtml(entry.hiragana)} · 片假名 ${escapeHtml(entry.katakana)}` : "暂无假名"}<br>${escapeHtml(entry.romanization || entry.ipa || "暂无罗马音")}</span></div>
-    <div class="dictionary-meaning-wrap"><div class="dictionary-meaning">${entry.meanings.map((meaning) => escapeHtml(meaning)).join("；")} <span class="dictionary-reading">· ${escapeHtml(entry.part)}</span></div><div class="dictionary-example">在线词典 · ${escapeHtml(entry.source)}</div></div>
+    <div class="dictionary-meaning-wrap"><div class="dictionary-meaning">${entry.meanings.map((meaning) => escapeHtml(meaning)).join("；")} <span class="dictionary-reading">· ${escapeHtml(entry.part)}</span></div><div class="dictionary-example">词库 · ${escapeHtml(entry.source)}</div></div>
     <button type="button" class="dictionary-audio" data-speak="${encodeURIComponent(entry.word)}" title="朗读词语" aria-label="朗读 ${entry.word}">◖</button>
-  </article>`).join("") : `<div class="dictionary-empty">联网词库没有找到这个词。可以换成日语、假名或罗马音再试。</div>`;
+  </article>`).join("") : `<div class="dictionary-empty">词库没有找到这个词。可以换成日语、中文、假名或罗马音再试。</div>`;
   $$("#dictionary-results [data-speak]").forEach((button) => button.addEventListener("click", () => speak(decodeURIComponent(button.dataset.speak))));
   $$("#dictionary-suggestions [data-dictionary-word]").forEach((button) => button.addEventListener("click", () => { $("#dictionary-search").value = button.dataset.dictionaryWord; renderDictionary(button.dataset.dictionaryWord); }));
   bindWordTokens($("#dictionary-results"));
@@ -304,21 +391,22 @@ async function renderDictionary(query = "") {
   const normalized = query.trim();
   $("#dictionary-suggestions").innerHTML = dictionarySuggestions();
   if (!normalized) {
-    $("#dictionary-result-meta").textContent = "联网词库 · 输入后即时查询";
-    $("#dictionary-results").innerHTML = `<div class="dictionary-empty">请输入一个日语词、假名或罗马音，开始联网查询。</div>`;
+    $("#dictionary-result-meta").textContent = "本地词库优先 · 输入后即时查询";
+    $("#dictionary-results").innerHTML = `<div class="dictionary-empty">请输入日语、中文、假名或罗马音开始查询。</div>`;
     $$("#dictionary-suggestions [data-dictionary-word]").forEach((button) => button.addEventListener("click", () => { $("#dictionary-search").value = button.dataset.dictionaryWord; renderDictionary(button.dataset.dictionaryWord); }));
     return;
   }
   const requestId = ++dictionaryRequestId;
-  $("#dictionary-result-meta").textContent = "正在联网查询……";
-  $("#dictionary-results").innerHTML = `<div class="dictionary-empty">正在连接在线词库，请稍候。</div>`;
+  $("#dictionary-result-meta").textContent = "正在查询本地词库……";
+  $("#dictionary-results").innerHTML = `<div class="dictionary-empty">优先从本地词库查找，未命中时再联网补充。</div>`;
   try {
     const result = await lookupOnlineDictionary(normalized);
     if (requestId === dictionaryRequestId) renderOnlineDictionaryResults(result);
-  } catch {
+  } catch (error) {
+    console.error("Dictionary lookup failed", error);
     if (requestId !== dictionaryRequestId) return;
-    $("#dictionary-result-meta").textContent = "在线词库暂时无法连接";
-    $("#dictionary-results").innerHTML = `<div class="dictionary-empty">查询失败，请检查网络后重试。当前版本不提供离线词条。</div>`;
+    $("#dictionary-result-meta").textContent = "词库暂时无法连接";
+    $("#dictionary-results").innerHTML = `<div class="dictionary-empty">本地词库加载失败，请刷新页面后重试。</div>`;
   }
 }
 
