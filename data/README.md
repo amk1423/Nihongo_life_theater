@@ -9,3 +9,5 @@
 `jc-special.json` 是公开 StarDict 日中简明专业词典 `jc-special` 的转换版，约 277,766 条日中释义，用于扩大中文反向搜索。原词典页面标注 GPL，来源下载地址为 [胡正 StarDict 词典列表](http://download.huzheng.org/zh_CN/stardict-jc-special-2.4.2.tar.bz2)。
 
 `jmdict-extended.json` 是完整 JMdict 英文数据的精简版，约 274,166 个日语词形；`jmdict-readings.json` 是同一数据的词形—假名索引。它们只在常用词库未命中时按需加载，分别用于扩大日语、假名、罗马音和扩展日中词条的读音覆盖。来源与授权遵循 [JMdict](https://www.jmdict.org/) 及 [jmdict-simplified](https://github.com/scriptin/jmdict-simplified) 的要求。
+
+`life-extra.json` 是本项目维护的生活化补充词条，覆盖炸猪排、寿司、拉面、天妇罗、章鱼烧等常见餐饮词，以及中文、假名和罗马音别名。

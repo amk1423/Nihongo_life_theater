@@ -1,0 +1,22 @@
+[
+  {"word":"とんかつ","readings":["とんかつ"],"meaning":"炸猪排","part":"名词","aliases":["トンカツ","tonkatsu","炸猪排","炸豬排"]},
+  {"word":"カツ丼","readings":["カツどん"],"meaning":"炸猪排盖饭","part":"名词","aliases":["かつ丼","かつどん","katsudon","炸猪排饭","猪排饭"]},
+  {"word":"寿司","readings":["すし"],"meaning":"寿司","part":"名词","aliases":["すし","スシ","sushi"]},
+  {"word":"ラーメン","readings":["らーめん"],"meaning":"拉面","part":"名词","aliases":["らーめん","ramen"]},
+  {"word":"うどん","readings":["うどん"],"meaning":"乌冬面","part":"名词","aliases":["ウドン","udon"]},
+  {"word":"そば","readings":["そば"],"meaning":"荞麦面","part":"名词","aliases":["蕎麦","ソバ","soba"]},
+  {"word":"天ぷら","readings":["てんぷら"],"meaning":"天妇罗","part":"名词","aliases":["天麩羅","てんぷら","テンプラ","tempura"]},
+  {"word":"焼き鳥","readings":["やきとり"],"meaning":"烤鸡串","part":"名词","aliases":["やきとり","ヤキトリ","yakitori"]},
+  {"word":"おにぎり","readings":["おにぎり"],"meaning":"饭团","part":"名词","aliases":["お握り","おむすび","饭团","onigiri"]},
+  {"word":"たこ焼き","readings":["たこやき"],"meaning":"章鱼烧","part":"名词","aliases":["たこやき","タコ焼き","takoyaki","章鱼烧"]},
+  {"word":"お好み焼き","readings":["おこのみやき"],"meaning":"御好烧／大阪烧","part":"名词","aliases":["おこのみやき","お好みやき","okonomiyaki","御好烧","大阪烧"]},
+  {"word":"餃子","readings":["ぎょうざ"],"meaning":"饺子","part":"名词","aliases":["ギョーザ","ぎょうざ","gyouza","餃子"]},
+  {"word":"牛丼","readings":["ぎゅうどん"],"meaning":"牛肉盖饭","part":"名词","aliases":["ぎゅうどん","gyudon","牛肉饭"]},
+  {"word":"焼肉","readings":["やきにく"],"meaning":"烤肉","part":"名词","aliases":["やきにく","ヤキニク","yakiniku"]},
+  {"word":"喫茶店","readings":["きっさてん"],"meaning":"咖啡馆／茶馆","part":"名词","aliases":["きっさてん","kissaten","咖啡馆"]},
+  {"word":"居酒屋","readings":["いざかや"],"meaning":"居酒屋／日式小酒馆","part":"名词","aliases":["いざかや","イザカヤ","izakaya","居酒屋"]},
+  {"word":"コンビニ","readings":["こんびに"],"meaning":"便利店","part":"名词","aliases":["こんびに","konbini","便利店"]},
+  {"word":"定食","readings":["ていしょく"],"meaning":"定食／套餐","part":"名词","aliases":["ていしょく","teishoku","套餐"]},
+  {"word":"弁当","readings":["べんとう"],"meaning":"便当","part":"名词","aliases":["べんとう","ベントウ","bentou","便当"]},
+  {"word":"メニュー","readings":["めにゅー"],"meaning":"菜单","part":"名词","aliases":["menu","菜单"]}
+]

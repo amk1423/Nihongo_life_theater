@@ -187,6 +187,17 @@ let localNamesPromise = null;
 let localChineseDictionaryPromise = null;
 let localExtendedChineseDictionaryPromise = null;
 let localReadingIndexPromise = null;
+let localLifeDictionaryPromise = null;
+
+async function loadLocalLifeDictionary() {
+  if (!localLifeDictionaryPromise) {
+    localLifeDictionaryPromise = fetch("./data/life-extra.json?v=1").then((response) => {
+      if (!response.ok) throw new Error(`local-life-dictionary-${response.status}`);
+      return response.json();
+    });
+  }
+  return localLifeDictionaryPromise;
+}
 
 const localChineseAliases = {
   "车站": "駅", "火车": "電車", "电车": "電車", "涩谷": "渋谷", "涉谷": "渋谷", "新宿": "新宿", "东京": "東京", "酒店": "ホテル", "旅馆": "ホテル", "吃": "食べる", "谢谢": "ありがとう", "出租车": "タクシー", "地铁": "地下鉄", "机场": "空港", "护照": "パスポート", "地图": "地図", "钱包": "財布", "行李": "荷物", "火车站": "駅", "车票": "切符", "药店": "薬局", "餐厅": "レストラン", "菜单": "メニュー", "厕所": "トイレ", "电梯": "エレベーター", "便利店": "コンビニ", "洗手间": "お手洗い", "雨伞": "傘", "充电器": "充電器", "出口": "出口", "入口": "入り口"
@@ -239,6 +250,7 @@ function katakanaToHiragana(value = "") {
 function isKana(value = "") { return /^[ぁ-ゖァ-ヺー]+$/.test(value); }
 
 const kanaRomajiMap = Object.fromEntries(Object.entries(romajiKanaMap).sort((a, b) => b[1].length - a[1].length).map(([romaji, kana]) => [kana, romaji]));
+Object.assign(kanaRomajiMap, { "し": "shi", "ち": "chi", "つ": "tsu", "ふ": "fu", "じ": "ji", "ぢ": "ji", "づ": "zu", "を": "o" });
 const kanaRomajiKeys = Object.keys(kanaRomajiMap).sort((a, b) => b.length - a.length);
 
 function hiraganaToRomaji(value = "") {
@@ -413,7 +425,26 @@ function findJapaneseCandidates(query, dictionary) {
   return { term, candidates: candidates.slice(0, 8) };
 }
 
+function lookupLifeDictionary(query, entries) {
+  const normalized = query.trim().toLowerCase();
+  return entries.filter((entry) => [entry.word, ...entry.readings, ...(entry.aliases || [])].some((value) => String(value).toLowerCase() === normalized)).map((entry) => {
+    const hiragana = entry.readings[0] || "";
+    return {
+      word: entry.word,
+      hiragana,
+      katakana: hiraganaToKatakana(hiragana),
+      romanization: hiraganaToRomaji(hiragana),
+      part: entry.part || "词条",
+      meanings: [entry.meaning],
+      source: "本地生活补充词条"
+    };
+  });
+}
+
 async function lookupLocalDictionary(query) {
+  const lifeDictionary = await loadLocalLifeDictionary();
+  const lifeMatches = lookupLifeDictionary(query, lifeDictionary);
+  if (lifeMatches.length) return { query, lookupTerm: query, entries: lifeMatches };
   const names = await loadLocalNames();
   const nameTerm = dictionarySearchTerm(query);
   const localNameMatches = names.entries.filter((entry) => entry.word === nameTerm || entry.hiragana === nameTerm || entry.romanization.toLowerCase() === nameTerm.toLowerCase());
