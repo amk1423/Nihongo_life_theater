@@ -125,12 +125,16 @@ const state = {
   showRoman: false,
   secondsLeft: 300,
   timerId: null,
-  sessionCompleted: false
+  sessionCompleted: false,
+  sessionMode: "fixed",
+  aiHistory: [],
+  aiBusy: false
 };
 let deferredInstallPrompt = null;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+const aiEndpoint = window.NIHONGO_AI_ENDPOINT || "/api/ai-chat";
 
 function loadProgress() {
   try { return { ...defaultProgress, ...(JSON.parse(localStorage.getItem("nihongo-life-progress")) || {}) }; }
@@ -594,12 +598,50 @@ function showView(viewName) {
 
 function startSession(sceneId = state.progress.lastScene || "ticket") {
   const scene = scenes.find((item) => item.id === sceneId) || scenes[0];
-  state.activeScene = scene; state.turnIndex = 0; state.messages = []; state.mistakes = []; state.sessionCompleted = false; state.secondsLeft = 300;
+  state.activeScene = scene; state.turnIndex = 0; state.messages = []; state.mistakes = []; state.sessionCompleted = false; state.secondsLeft = 300; state.sessionMode = "fixed"; state.aiHistory = []; state.aiBusy = false;
   $("#session-icon").textContent = scene.symbol; $("#session-title").textContent = scene.title; $("#session-goal").textContent = scene.goal; $("#session-total").textContent = String(scene.turns.length).padStart(2, "0");
+  setSessionModeUI("fixed");
   $("#chat-log").innerHTML = ""; $("#message-input").value = ""; $("#composer-hint").textContent = ""; $("#phrase-preview-list").innerHTML = scene.phrases.map((phrase) => `<div class="phrase-row"><span>${renderJapaneseText(phrase.jp)}</span><button data-speak="${encodeURIComponent(phrase.jp)}" title="朗读">◖</button></div>`).join("");
   $$("#phrase-preview-list [data-speak]").forEach((button) => button.addEventListener("click", () => speak(decodeURIComponent(button.dataset.speak))));
   bindWordTokens($("#phrase-preview-list"));
   stopTimer(); startTimer(); showView("session"); appendNpcTurn();
+}
+
+function setSessionModeUI(mode) {
+  const nextMode = mode === "ai" ? "ai" : "fixed";
+  state.sessionMode = nextMode;
+  state.turnIndex = 0;
+  state.messages = [];
+  state.aiHistory = [];
+  state.aiBusy = false;
+  const fixedButton = $("#fixed-mode-toggle");
+  const aiButton = $("#ai-mode-toggle");
+  fixedButton.classList.toggle("is-active", nextMode === "fixed");
+  aiButton.classList.toggle("is-active", nextMode === "ai");
+  fixedButton.setAttribute("aria-selected", String(nextMode === "fixed"));
+  aiButton.setAttribute("aria-selected", String(nextMode === "ai"));
+  $("#ai-mode-status").textContent = nextMode === "ai" ? (aiEndpoint.startsWith("/") ? "等待后端配置" : "联网 AI") : "离线可用";
+
+  if (nextMode === "ai") {
+    const welcome = "こんにちは！今日はどんなことを練習しますか？";
+    state.aiHistory.push({ role: "assistant", content: welcome });
+    state.messages.push({ role: "assistant", text: welcome, reading: "こんにちは！きょうはどんなことをれんしゅうしますか？", roman: "Konnichiwa! Kyou wa donna koto o renshuu shimasu ka?", zh: "你好！今天想练习什么内容？" });
+    $("#session-icon").textContent = "✦";
+    $("#session-title").textContent = "AI 生活对话";
+    $("#session-goal").textContent = "围绕当前场景自然聊天；可以随时看提示，结束后再复盘。";
+    $("#session-total").textContent = "AI";
+    renderMessages();
+    renderAiComposer();
+    return;
+  }
+
+  $("#session-icon").textContent = state.activeScene.symbol;
+  $("#session-title").textContent = state.activeScene.title;
+  $("#session-goal").textContent = state.activeScene.goal;
+  $("#session-total").textContent = String(state.activeScene.turns.length).padStart(2, "0");
+  renderMessages();
+  const turn = state.activeScene.turns[state.turnIndex];
+  if (turn) renderComposer(turn);
 }
 
 function startTimer() {
@@ -616,8 +658,8 @@ function appendNpcTurn() {
 
 function renderMessages() {
   $("#chat-log").innerHTML = state.messages.map((message) => `<div class="chat-message ${message.role}">
-    <div class="chat-avatar">${message.role === "assistant" ? state.activeScene.symbol : "你"}</div>
-    <div class="bubble"><span class="japanese">${renderJapaneseText(message.text || message.npc)}</span>${message.reading || message.roman ? `<span class="reading" data-roman="${escapeHtml(message.roman || "")}">${escapeHtml(message.reading || message.roman || "")}</span>` : ""}${message.zh ? `<span class="translation">${escapeHtml(message.zh)}</span>` : ""}${message.role === "assistant" ? `<button class="message-audio" data-speak="${encodeURIComponent(message.text || message.npc)}">◖ 朗读</button>` : ""}</div>
+    <div class="chat-avatar">${message.role === "assistant" ? (state.sessionMode === "ai" ? "✦" : state.activeScene.symbol) : "你"}</div>
+    <div class="bubble"><span class="japanese">${renderJapaneseText(message.text || message.npc || "")}</span>${message.reading || message.roman ? `<span class="reading" data-roman="${escapeHtml(message.roman || "")}">${escapeHtml(message.reading || message.roman || "")}</span>` : ""}${message.zh ? `<span class="translation">${escapeHtml(message.zh)}</span>` : ""}${message.correction ? `<span class="translation">复盘提示：${escapeHtml(message.correction)}</span>` : ""}${message.role === "assistant" ? `<button class="message-audio" data-speak="${encodeURIComponent(message.text || message.npc || "")}">◖ 朗读</button>` : ""}</div>
   </div>`).join("");
   $("#chat-log").classList.toggle("show-reading", state.showReading); $("#chat-log").classList.toggle("show-roman", state.showRoman); $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
   $$("#chat-log [data-speak]").forEach((button) => button.addEventListener("click", () => speak(decodeURIComponent(button.dataset.speak))));
@@ -625,24 +667,72 @@ function renderMessages() {
 }
 
 function renderComposer(turn) {
+  $("#message-input").disabled = false;
+  $("#composer-form button[type=submit]").disabled = false;
+  $("#message-input").placeholder = "输入你的回答，或选择下面的表达";
   $("#composer-hint").textContent = state.showHint ? `提示：${turn.hint}` : "";
   $("#quick-replies").innerHTML = turn.replies.map((reply) => `<button type="button" class="quick-reply">${reply}</button>`).join("");
   $$(".quick-reply").forEach((button) => button.addEventListener("click", () => { $("#message-input").value = button.textContent; $("#composer-form").requestSubmit(); }));
 }
 
+function renderAiComposer(replies = ["こんにちは。", "お願いします。", "よくわかりません。"]) {
+  $("#message-input").placeholder = "用日语回复 AI";
+  $("#message-input").disabled = state.aiBusy;
+  $("#composer-form button[type=submit]").disabled = state.aiBusy;
+  $("#composer-hint").textContent = state.aiBusy ? "AI 正在思考……" : "提示：用简单日语回答即可，错误不会立刻打断对话。";
+  $("#quick-replies").innerHTML = replies.slice(0, 3).map((reply) => `<button type="button" class="quick-reply">${escapeHtml(reply)}</button>`).join("");
+  $$(".quick-reply").forEach((button) => {
+    button.disabled = state.aiBusy;
+    button.addEventListener("click", () => { $("#message-input").value = button.textContent; $("#composer-form").requestSubmit(); });
+  });
+}
+
 function handleSubmit(event) {
   event.preventDefault(); const input = $("#message-input"); const text = input.value.trim(); if (!text) { showToast("先输入一句，或选择下面的表达"); return; }
+  if (state.sessionCompleted) return;
+  if (state.sessionMode === "ai") { input.value = ""; void handleAiSubmit(text); return; }
   const turn = state.activeScene.turns[state.turnIndex]; const isGood = turn.expected.some((word) => text.toLowerCase().includes(word.toLowerCase()));
   state.messages.push({ role: "user", text, zh: isGood ? "表达得很好" : "先继续对话，结束时再一起复盘" }); if (!isGood) state.mistakes.push({ text, expected: turn.replies[0], zh: turn.replies[0] });
   input.value = ""; state.turnIndex += 1; renderMessages(); window.setTimeout(appendNpcTurn, 220);
 }
 
+async function handleAiSubmit(text) {
+  if (state.aiBusy) return;
+  let nextReplies;
+  state.aiBusy = true;
+  state.messages.push({ role: "user", text });
+  state.aiHistory.push({ role: "user", content: text });
+  renderMessages(); renderAiComposer();
+  $("#ai-mode-status").textContent = "思考中…";
+  try {
+    const response = await fetch(aiEndpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scene: state.activeScene.id, sceneTitle: state.activeScene.title, userLevel: "日语初学者", messages: state.aiHistory.slice(-12) }) });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `AI-${response.status}`);
+    const reply = String(payload.reply || "すみません、もう一度お願いします。");
+    state.messages.push({ role: "assistant", text: reply, reading: payload.reading || "", roman: payload.romanization || "", zh: payload.translation || "", correction: payload.correction || "" });
+    state.aiHistory.push({ role: "assistant", content: reply });
+    $("#ai-mode-status").textContent = "AI 在线";
+    nextReplies = Array.isArray(payload.suggestedReplies) && payload.suggestedReplies.length ? payload.suggestedReplies : undefined;
+    renderMessages();
+  } catch (error) {
+    console.error("AI chat failed", error);
+    const hint = aiEndpoint.startsWith("/") ? "AI 接口还没有配置。请用 server.js 启动本地接口，或部署一个后端代理后再试。" : "AI 接口暂时不可用，请稍后再试。";
+    state.messages.push({ role: "assistant", text: "すみません、今は接続できません。", reading: "すみません、いまはせつぞくできません。", roman: "Sumimasen, ima wa setsuzoku dekimasen.", zh: hint });
+    $("#ai-mode-status").textContent = "AI 未连接";
+    renderMessages(); showToast("AI 暂时无法连接");
+  } finally {
+    state.aiBusy = false;
+    renderAiComposer(nextReplies);
+  }
+}
+
 function finishSession() {
-  if (state.sessionCompleted) return; state.sessionCompleted = true; stopTimer(); state.progress.completed += 1; state.progress.lastScene = state.activeScene.id;
+  if (state.sessionCompleted) return; if (state.aiBusy) { showToast("等 AI 回复后再结束"); return; } state.sessionCompleted = true; stopTimer(); state.progress.completed += 1; state.progress.lastScene = state.activeScene.id;
   const today = new Date().toDateString(); const last = localStorage.getItem("nihongo-life-last-day"); if (last !== today) { state.progress.streak = Math.max(1, state.progress.streak + (last ? 1 : 0)); localStorage.setItem("nihongo-life-last-day", today); }
   const added = state.activeScene.phrases.filter((phrase) => !state.progress.reviewItems.some((item) => item.jp === phrase.jp)); state.progress.reviewItems = [...added, ...state.progress.reviewItems].slice(0, 8); saveProgress(); updateProgressUI(); renderReviewList();
   $("#review-lead").textContent = `你刚刚在「${state.activeScene.title}」完成了一次真实的日语交流。`;
-  $("#review-summary").innerHTML = `<div class="summary-item"><strong>${state.activeScene.turns.length}</strong><span>轮对话完成</span></div><div class="summary-item"><strong>${state.activeScene.phrases.length}</strong><span>句表达已收藏</span></div><div class="summary-item"><strong>${state.mistakes.length || 0}</strong><span>句可以稍后复盘</span></div>`;
+  const completedTurns = state.sessionMode === "ai" ? Math.max(1, state.aiHistory.filter((item) => item.role === "user").length) : state.activeScene.turns.length;
+  $("#review-summary").innerHTML = `<div class="summary-item"><strong>${completedTurns}</strong><span>轮对话完成</span></div><div class="summary-item"><strong>${state.activeScene.phrases.length}</strong><span>句表达已收藏</span></div><div class="summary-item"><strong>${state.mistakes.length || 0}</strong><span>句可以稍后复盘</span></div>`;
   showView("review-detail");
 }
 
@@ -694,6 +784,7 @@ function registerPWA() {
 
 function bindEvents() {
   $$("[data-view]").forEach((button) => button.addEventListener("click", () => showView(button.dataset.view)));
+  $("#fixed-mode-toggle").addEventListener("click", () => setSessionModeUI("fixed")); $("#ai-mode-toggle").addEventListener("click", () => setSessionModeUI("ai"));
   $("#start-today").addEventListener("click", () => startSession()); $("#back-home").addEventListener("click", () => { stopTimer(); showView("home"); }); $("#finish-session").addEventListener("click", finishSession); $("#review-again").addEventListener("click", () => startSession(state.activeScene.id)); $("#composer-form").addEventListener("submit", handleSubmit);
   $("#hint-toggle").addEventListener("click", () => { state.showHint = !state.showHint; $("#hint-toggle").classList.toggle("is-active", state.showHint); const turn = state.activeScene.turns[state.turnIndex]; if (turn) renderComposer(turn); });
   $("#reading-toggle").addEventListener("click", () => { state.showReading = !state.showReading; state.showRoman = false; $("#reading-toggle").classList.toggle("is-active", state.showReading); $("#roman-toggle").classList.remove("is-active"); renderMessages(); });

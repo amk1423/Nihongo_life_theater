@@ -164,6 +164,14 @@
                 <button class="quiet-button" id="session-help" title="查看场景目标">?</button>
               </div>
               <div class="goal-strip" id="session-goal">你要去哪里？先学会说出目的地。</div>
+              <div class="session-mode-bar" aria-label="练习模式">
+                <span class="session-mode-label">练习模式</span>
+                <div class="session-mode-switch" role="tablist">
+                  <button type="button" class="mode-button is-active" id="fixed-mode-toggle" role="tab" aria-selected="true">固定场景</button>
+                  <button type="button" class="mode-button" id="ai-mode-toggle" role="tab" aria-selected="false">AI 自由聊天</button>
+                </div>
+                <span class="ai-mode-status" id="ai-mode-status">离线可用</span>
+              </div>
               <div class="chat-log" id="chat-log" aria-live="polite"></div>
               <div class="composer-wrap">
                 <div class="composer-tools">
@@ -216,6 +224,6 @@
       <div class="word-popover-meaning" id="word-popover-meaning"></div>
     </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=dict-expand-v2" defer></script>
+    <script src="./app.js?v=ai-v1" defer></script>
   </body>
 </html>

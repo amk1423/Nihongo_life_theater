@@ -12,6 +12,20 @@ py -m http.server 4173
 
 然后打开 `http://localhost:4173`。
 
+## AI 自由聊天（DeepSeek）
+
+今日练习中可以切换到“AI 自由聊天”。AI 会围绕当前场景陪练，并返回日语回复、中文意思、平假名、罗马音和快捷回答。固定场景仍然可以完全离线使用。
+
+本地测试时，在 PowerShell 中设置环境变量后启动项目：
+
+```powershell
+$env:DEEPSEEK_API_KEY = "你的密钥"
+$env:DEEPSEEK_MODEL = "deepseek-chat"
+node server.js
+```
+
+密钥只放在服务端环境变量里，不要写进 `app.js`、GitHub 仓库或静态网页。GitHub Pages 只能托管静态文件，不能安全保存 DeepSeek 密钥；以后要让公开网址也能使用 AI，需要把 `server.js` 部署成一个后端接口，再通过 `window.NIHONGO_AI_ENDPOINT` 指向它。
+
 ## 当前版本
 
 - 车站买票、问路与换乘、出租车沟通三个场景
